@@ -6,6 +6,8 @@
 //!   `OpenAiStrictSchemaAdapter`: every object schema node in the output has
 //!   `"additionalProperties": false`.
 
+#![cfg(feature = "openai")]
+
 use adk_core::SchemaAdapter;
 use adk_model::openai::OpenAiStrictSchemaAdapter;
 use proptest::prelude::*;
