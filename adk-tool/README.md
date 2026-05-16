@@ -24,22 +24,24 @@ Tool system for Rust Agent Development Kit (ADK-Rust) agents (FunctionTool, MCP,
 - **PrefixedToolset** - Namespace tool names with a prefix
 - **ExitLoopTool** - Control flow for loop agents
 - **LoadArtifactsTool** - Inject binary artifacts into context
+- **LoadMemoryTool** - Agent-callable tool for on-demand memory search (feature: `memory-tools`)
+- **PreloadMemoryTool** - Auto-loads relevant memories at turn start (feature: `memory-tools`)
 
 ## Installation
 
 ```toml
 [dependencies]
-adk-tool = "0.8.1"
+adk-tool = "0.8.2"
 
 # For remote MCP servers via HTTP:
-adk-tool = { version = "0.8.1", features = ["http-transport"] }
+adk-tool = { version = "0.8.2", features = ["http-transport"] }
 ```
 
 Or use the meta-crate:
 
 ```toml
 [dependencies]
-adk-rust = { version = "0.8.1", features = ["tools"] }
+adk-rust = { version = "0.8.2", features = ["tools"] }
 ```
 
 ## Quick Start

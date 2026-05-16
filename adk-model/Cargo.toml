@@ -83,3 +83,7 @@ required-features = ["openrouter"]
 [[example]]
 name = "gemini_thinking"
 required-features = ["gemini"]
+
+[[test]]
+name = "openai_schema_property_tests"
+required-features = ["openai"]

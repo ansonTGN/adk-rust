@@ -65,7 +65,10 @@ adk-eval/        Evaluation framework: trajectory, semantic, rubric, LLM-judge
 adk-telemetry/   OpenTelemetry 0.31 integration for agent observability
 adk-guardrail/   Input/output guardrails: validation, content filtering, PII redaction
 adk-auth/        Authentication: API keys, JWT, OAuth2, OIDC, SSO
-adk-plugin/      Plugin system for agent lifecycle hooks
+adk-plugin/      Plugin system for agent lifecycle hooks — EnhancedPlugin trait with tool/model
+                 interception, priority-based pipeline, PluginContext shared state
+adk-retry-reflect/ Retry & Reflect plugin — intercepts tool failures, injects reflection prompts,
+                 exponential backoff, circuit-breaker patterns
 adk-skill/       Skill discovery, parsing, and convention-based agent capabilities
 adk-cli/         Command-line launcher for agents
 adk-anthropic/   Dedicated Anthropic API client with streaming, thinking, caching, citations, pricing

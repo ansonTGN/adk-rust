@@ -44,15 +44,20 @@ name = "adk-acp"
 version = "0.8.2"
 dependencies = [
  "adk-core",
+ "adk-runner",
+ "adk-session",
  "agent-client-protocol",
  "agent-client-protocol-tokio",
+ "async-stream",
  "async-trait",
  "futures",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "tracing",
+ "uuid 1.23.0",
 ]
 
 [[package]]
@@ -74,6 +79,7 @@ dependencies = [
  "adk-core",
  "adk-guardrail",
  "adk-model",
+ "adk-plugin",
  "adk-skill",
  "adk-telemetry",
  "adk-tool",
@@ -292,6 +298,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
  "uuid 1.23.0",
 ]
 
@@ -343,6 +350,7 @@ dependencies = [
 name = "adk-gemini"
 version = "0.8.2"
 dependencies = [
+ "adk-core",
  "async-stream",
  "async-trait",
  "base64 0.22.1",
@@ -559,6 +567,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "adk-retry-reflect"
+version = "0.8.2"
+dependencies = [
+ "adk-core",
+ "adk-plugin",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "adk-runner"
 version = "0.8.2"
 dependencies = [
@@ -677,6 +699,7 @@ dependencies = [
  "mime_guess",
  "notify",
  "proptest",
+ "regex",
  "reqwest 0.12.28",
  "rust-embed",
  "serde",
@@ -744,6 +767,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "proptest",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -757,12 +781,14 @@ version = "0.8.2"
 dependencies = [
  "adk-code",
  "adk-core",
+ "adk-memory",
  "adk-rust-macros",
  "adk-sandbox",
  "adk-telemetry",
  "async-stream",
  "async-trait",
  "base64 0.22.1",
+ "chrono",
  "futures",
  "gcp-bigquery-client",
  "google-cloud-spanner",
