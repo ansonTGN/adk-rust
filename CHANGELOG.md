@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-05-16
+
+### Added
+
+- **Enhanced Plugin System** (`adk-plugin`): Fine-grained tool-call and model-call interception with full argument/result access, plugin composition, and shared state.
+  - `EnhancedPlugin` trait with `before_tool_call`, `after_tool_call`, `before_model_call`, `after_model_call` hooks
+  - `BeforeToolCallResult::ShortCircuit` — skip tool execution with synthetic result
+  - `PluginContext` — TypeMap-based shared state across hook invocations (tokio::sync::RwLock)
+  - `EnhancedPluginManager` — priority-sorted pipeline execution
+  - `AdaptedPlugin` — bridges legacy closure-based plugins to new trait
+  - `LlmAgentBuilder::plugin()` / `.plugins()` — register enhanced plugins
+  - Zero overhead when no enhanced plugins registered
+
+- **Retry & Reflect Plugin** (`adk-retry-reflect`): New standalone crate that intercepts tool failures and injects structured reflection prompts for agent self-correction.
+  - Per-tool and global retry limits (default: 3)
+  - Configurable backoff (none, fixed, exponential with ceiling)
+  - Tool eligibility filtering (allowlist/denylist)
+  - Customizable reflection templates with 6 placeholders
+  - Global failure tracking for circuit-breaker patterns
+  - Structured tracing events (`retry_reflect.retry`, `retry_reflect.exhausted`)
+  - Implements `EnhancedPlugin` trait
+
+- **Memory Tools** (`adk-tool`, feature `memory-tools`): Self-callable agent tools for autonomous memory search during reasoning.
+  - `LoadMemoryTool` — agent calls during reasoning to search memory on demand
+  - `PreloadMemoryTool` — auto-loads relevant memories at turn start via `into_before_model_callback()`
+  - `MemoryToolConfig` — shared config (max_results, min_relevance_score, project_id)
+  - Works with any `MemoryService` backend (in-memory, PostgreSQL, etc.)
+  - Feature-gated: `adk-tool = { features = ["memory-tools"] }`
+
+- **Provider-Aware Schema Normalization** (`adk-core`, `adk-gemini`, `adk-model`): MCP tool schemas normalized per-provider at request time.
+  - `SchemaAdapter` trait with `normalize_schema`, `normalize_tool_name`, `empty_schema`
+  - `GeminiSchemaAdapter` — full destructive transforms, Vertex AI variant
+  - `OpenAiStrictSchemaAdapter` / `OpenAiSchemaAdapter` / `AnthropicSchemaAdapter`
+  - `SchemaCache` — thread-safe normalized schema cache
+  - `sanitize_schema` removed from McpToolset (raw schemas returned verbatim)
+
+- **Examples**: `examples/plugin_system/` and `examples/retry_reflect/` demonstrating agentic LLM usage with real Gemini calls
+
 ## [0.8.1] - 2026-05-13
 
 ### Added

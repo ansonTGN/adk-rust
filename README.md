@@ -8,7 +8,7 @@
 ![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
 [![GitHub Discussions](https://img.shields.io/github/discussions/zavora-ai/adk-rust?style=flat&logo=github&color=5865F2)](https://github.com/zavora-ai/adk-rust/discussions)
 
-> **🚀 v0.8.1 Released!** ACP integration (connect to Claude Code, Codex, Kiro CLI as tools), MCP schema fixes for Gemini, `cargo adk deploy`. Plus: dependency diet, new feature tiers (`minimal`, `standard`, `enterprise`, `full`), AWP protocol, DeepSeek V4. See [CHANGELOG](CHANGELOG.md) for full details.
+> **🚀 v0.8.2 Released!** Enhanced Plugin System (tool/model interception with pipeline execution), Retry & Reflect plugin (auto-recovery from tool failures), Memory Tools (agents search their own memory), Provider-Aware Schema Normalization. See [CHANGELOG](CHANGELOG.md) for full details.
 >
 > **Contributors:** Many thanks to [@mikefaille](https://github.com/mikefaille) — AdkIdentity design, realtime audio, LiveKit bridge, skill system. [@rohan-panickar](https://github.com/rohan-panickar) — OpenAI-compatible providers, xAI, multimodal content. [@dhruv-pant](https://github.com/dhruv-pant) — Gemini service account auth. [@tomtom215](https://github.com/tomtom215) — A2A Protocol v1.0.0 types crate ([a2a-protocol-types](https://crates.io/crates/a2a-protocol-types)), Foundation-verified wire types powering our A2A v1 layer. [@danielsan](https://github.com/danielsan) — Google deps issue & PR (#181, #203), RAG crash report (#205). [@CodingFlow](https://github.com/CodingFlow) — Gemini 3 thinking level, global endpoint, citationSources (#177, #178, #179). [@ctylx](https://github.com/ctylx) — skill discovery fix (#204). [@poborin](https://github.com/poborin) — project config proposal (#176). [@chillin-capybara](https://github.com/chillin-capybara) — ACP integration, adk-acp crate. [Get started →](https://github.com/zavora-ai/adk-rust/wiki/quickstart)
 >
@@ -67,6 +67,9 @@ ADK-Rust provides a comprehensive framework for building AI agents in Rust, feat
 - **Agentic commerce**: ACP and AP2 payment orchestration with durable transaction journals and evidence-backed recall
 - **Agentic Web Protocol (AWP)**: Make websites agent-native with discovery, capability manifests, trust levels, rate limiting, consent, and health monitoring
 - **Production features**: Session management, artifact storage, memory systems with project-scoped isolation, REST/A2A APIs
+- **Plugin system**: Enhanced plugin pipeline with tool/model interception, priority ordering, shared state, and short-circuit
+- **Production resilience**: Retry & Reflect plugin for automatic recovery from tool failures with exponential backoff
+- **Memory tools**: Agents autonomously search their own memory during reasoning (LoadMemoryTool, PreloadMemoryTool)
 - **Developer experience**: Interactive CLI, 120+ working examples, comprehensive documentation
 
 **Status**: Production-ready, actively maintained
