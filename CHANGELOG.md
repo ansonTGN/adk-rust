@@ -5,7 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.10.0] - 2026-05-31
+
+### Breaking
+
+- **Workspace version bump to 0.10.0.** This is a breaking (0.x major) release.
+  All `adk-*` crates move from 0.9.x to 0.10.0 in lockstep.
+- **adk-core: `LlmResponse` and `LlmRequest` gained public fields.** These structs
+  are not `#[non_exhaustive]` and are constructed with struct literals downstream,
+  so the additions below are breaking changes for external code that builds them
+  by struct literal (use `..Default::default()`, `LlmResponse::new`, or
+  `LlmRequest::new` to be forward-compatible):
+  - `LlmResponse.interaction_id: Option<String>`
+  - `LlmRequest.previous_response_id: Option<String>`
+- **adk-gemini: `FunctionResponse` gained a public `id` field**, and the `Model`
+  enum (not `#[non_exhaustive]`) gained new variants — both breaking for external
+  struct-literal / exhaustive-match consumers.
 
 ### Added
 
@@ -56,8 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Streaming (SSE) and background-poll completion surfaced through the same
     response stream the runner consumes.
   - Example: `examples/gemini_interactions_agent/`.
-- **adk-core: provider-neutral interaction continuity fields** — additive,
-  non-breaking fields that carry conversation continuity across providers:
+- **adk-core: provider-neutral interaction continuity fields** — new fields that
+  carry conversation continuity across providers (see Breaking above):
   - `LlmResponse.interaction_id: Option<String>` plus an `Event::interaction_id()`
     accessor (mirrors ADK-Python's `event.interaction_id`).
   - `LlmRequest.previous_response_id: Option<String>`, populated by `LlmAgent`
