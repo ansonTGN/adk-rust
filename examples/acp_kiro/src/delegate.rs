@@ -18,15 +18,15 @@
 //! ```
 
 use adk_acp::{AcpAgentTool, PermissionDecision, PermissionPolicy, UsageTracker};
-use adk_rust::prelude::*;
 use adk_rust::Launcher;
+use adk_rust::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    let api_key = std::env::var("GOOGLE_API_KEY")
-        .map_err(|_| anyhow::anyhow!("GOOGLE_API_KEY not set"))?;
+    let api_key =
+        std::env::var("GOOGLE_API_KEY").map_err(|_| anyhow::anyhow!("GOOGLE_API_KEY not set"))?;
 
     let model = GeminiModel::new(&api_key, "gemini-2.5-flash")?;
 
@@ -89,10 +89,7 @@ async fn main() -> anyhow::Result<()> {
         println!("   Total chars received: {}", stats.total_response_chars);
         println!("   Total time: {:?}", stats.total_duration);
         if stats.total_calls > 0 {
-            println!(
-                "   Avg latency: {:?}",
-                stats.total_duration / stats.total_calls as u32
-            );
+            println!("   Avg latency: {:?}", stats.total_duration / stats.total_calls as u32);
         }
     }
 
