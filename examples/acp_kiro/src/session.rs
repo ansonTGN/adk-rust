@@ -17,8 +17,8 @@ use std::sync::Arc;
 async fn main() -> anyhow::Result<()> {
     println!("=== ADK-ACP: Persistent Session with Kiro CLI ===\n");
 
-    let config = AcpAgentConfig::new("kiro-cli acp --trust-all-tools")
-        .working_dir(std::env::current_dir()?);
+    let config =
+        AcpAgentConfig::new("kiro-cli acp --trust-all-tools").working_dir(std::env::current_dir()?);
 
     let policy = Arc::new(PermissionPolicy::AutoApprove);
 
@@ -36,9 +36,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Second prompt — uses context from first
     println!("─── Prompt 2: Use established context ───");
-    let r2 = session
-        .prompt("Which of those files handles error types? Answer in one sentence.")
-        .await?;
+    let r2 =
+        session.prompt("Which of those files handles error types? Answer in one sentence.").await?;
     println!("{}", r2.text);
     println!("  (latency: {:?}, prompt #{})\n", r2.duration, r2.prompt_count);
 
