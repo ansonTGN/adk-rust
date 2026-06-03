@@ -13,7 +13,7 @@
 
 use adk_rust::prelude::*;
 use adk_skill::{
-    apply_skill_injection, load_skill_index, select_skills, SelectionPolicy, SkillIndex,
+    SelectionPolicy, SkillIndex, apply_skill_injection, load_skill_index, select_skills,
 };
 use std::sync::Arc;
 
@@ -37,27 +37,13 @@ async fn main() -> anyhow::Result<()> {
     }
     println!();
 
-    let policy = SelectionPolicy {
-        top_k: 3,
-        min_score: 0.1,
-        ..SelectionPolicy::default()
-    };
+    let policy = SelectionPolicy { top_k: 3, min_score: 0.1, ..SelectionPolicy::default() };
 
     // ─── Scenario 1: Chinese query → Database skill ─────────────────────
-    demonstrate_query(
-        &index,
-        &policy,
-        "查询数据库中最近一周的订单性能",
-        "Chinese database query",
-    );
+    demonstrate_query(&index, &policy, "查询数据库中最近一周的订单性能", "Chinese database query");
 
     // ─── Scenario 2: Chinese query → Desktop control skill ──────────────
-    demonstrate_query(
-        &index,
-        &policy,
-        "截图看看屏幕上有什么应用在运行",
-        "Chinese desktop query",
-    );
+    demonstrate_query(&index, &policy, "截图看看屏幕上有什么应用在运行", "Chinese desktop query");
 
     // ─── Scenario 3: Russian query → Document search skill ──────────────
     demonstrate_query(
@@ -83,9 +69,25 @@ async fn main() -> anyhow::Result<()> {
         "Mixed Chinese+English query",
     );
 
-    // ─── Scenario 6: Agent with injected skill context ──────────────────
+    // ─── Scenario 6: Japanese query → Task management ───────────────────
+    demonstrate_query(
+        &index,
+        &policy,
+        "タスクの優先度を変更して期限を明日に設定",
+        "Japanese task management query",
+    );
+
+    // ─── Scenario 7: Korean query → Calendar management ─────────────────
+    demonstrate_query(
+        &index,
+        &policy,
+        "내일 일정 확인하고 충돌 있는지 알려줘",
+        "Korean calendar query",
+    );
+
+    // ─── Scenario 8: Agent with injected skill context ──────────────────
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("  Scenario 6: Full Agent with Skill Injection");
+    println!("  Scenario 8: Full Agent with Skill Injection");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!();
 
@@ -189,9 +191,7 @@ async fn run_agent_with_skill(index: &SkillIndex, api_key: &str) -> anyhow::Resu
         .session_service(sessions)
         .build()?;
 
-    let mut stream = runner
-        .run_str("user-1", session.id(), content)
-        .await?;
+    let mut stream = runner.run_str("user-1", session.id(), content).await?;
 
     print!("  🤖 Response: ");
     while let Some(event) = stream.next().await {
