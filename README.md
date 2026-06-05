@@ -5,12 +5,12 @@
 [![docs.rs](https://docs.rs/adk-rust/badge.svg)](https://docs.rs/adk-rust)
 [![Wiki](https://img.shields.io/badge/docs-Wiki-blue)](https://github.com/zavora-ai/adk-rust/wiki)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-![Rust](https://img.shields.io/badge/rust-1.96%2B-orange.svg)
+![Rust](https://img.shields.io/badge/rust-1.94%2B-orange.svg)
 [![GitHub Discussions](https://img.shields.io/github/discussions/zavora-ai/adk-rust?style=flat&logo=github&color=5865F2)](https://github.com/zavora-ai/adk-rust/discussions)
 
 > **🚀 v0.9.2 Released!** Composable Template System — 8 base templates, 9 addons, 5 enterprise patterns via `cargo adk new --addon`. Plus: `cargo adk build` (compile without deploying), provider-aware schema normalization, A2A Simple Scaffolding, and security fixes (hickory-proto, openssl, rubato, similar). See [CHANGELOG](CHANGELOG.md) for full details.
 >
-> **Contributors:** Many thanks to [@mikefaille](https://github.com/mikefaille) — AdkIdentity design, realtime audio, LiveKit bridge, skill system. [@rohan-panickar](https://github.com/rohan-panickar) — OpenAI-compatible providers, xAI, multimodal content. [@dhruv-pant](https://github.com/dhruv-pant) — Gemini service account auth. [@tomtom215](https://github.com/tomtom215) — A2A Protocol v1.0.0 types crate ([a2a-protocol-types](https://crates.io/crates/a2a-protocol-types)), Foundation-verified wire types powering our A2A v1 layer. [@danielsan](https://github.com/danielsan) — Google deps issue & PR (#181, #203), RAG crash report (#205). [@CodingFlow](https://github.com/CodingFlow) — Gemini 3 thinking level, global endpoint, citationSources (#177, #178, #179). [@ctylx](https://github.com/ctylx) — skill discovery fix (#204). [@poborin](https://github.com/poborin) — project config proposal (#176). [@chillin-capybara](https://github.com/chillin-capybara) — ACP integration, adk-acp crate. [Get started →](https://github.com/zavora-ai/adk-rust/wiki/quickstart)
+> **Contributors:** Many thanks to [@mikefaille](https://github.com/mikefaille) — AdkIdentity design, realtime audio, LiveKit bridge, skill system. [@rohan-panickar](https://github.com/rohan-panickar) — OpenAI-compatible providers, xAI, multimodal content. [@dhruv-pant](https://github.com/dhruv-pant) — Gemini service account auth. [@tomtom215](https://github.com/tomtom215) — A2A Protocol v1.0.0 types crate ([a2a-protocol-types](https://crates.io/crates/a2a-protocol-types)), Foundation-verified wire types powering our A2A v1 layer. [@danielsan](https://github.com/danielsan) — Google deps issue & PR (#181, #203), RAG crash report (#205). [@CodingFlow](https://github.com/CodingFlow) — Gemini 3 thinking level, global endpoint, citationSources (#177, #178, #179). [@ctylx](https://github.com/ctylx) — skill discovery fix (#204). [@poborin](https://github.com/poborin) — project config proposal (#176). [@chillin-capybara](https://github.com/chillin-capybara) — ACP integration, adk-acp crate. [@baotao2006](https://github.com/baotao2006) — UTF-8 boundary audit, CJK search/skill/eval fixes (#349, #357). [Get started →](https://github.com/zavora-ai/adk-rust/wiki/quickstart)
 >
 > **Announcements:** ADK-Rust Roadmap launched for 2026, we welcome suggestions, comments and ideas. ADK Playground launched! You can now run 70+ ADK-Rust AI Agents online for free. Compile and click. No login, no install. https://playground.adk-rust.com (https://playground.adk-rust.com) And many more discussions, feel free to discuss: [![GitHub Discussions](https://img.shields.io/github/discussions/zavora-ai/adk-rust?style=flat&logo=github&color=5865F2)](https://github.com/zavora-ai/adk-rust/discussions)
 
@@ -233,7 +233,7 @@ Use `cargo adk build` to verify compilation without deploying.
 
 ### Manual installation
 
-Requires Rust 1.96 or later (Rust 2024 edition). Add to your `Cargo.toml`:
+Requires Rust 1.94 or later (Rust 2024 edition). Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -679,6 +679,8 @@ let result = agent.invoke(input, ExecutionConfig::new("thread-1")).await?;
 - **Checkpointing**: Memory and SQLite backends for fault tolerance, durable resume from checkpoint after crash
 - **Human-in-the-Loop**: Dynamic interrupts based on state, resume from checkpoint
 - **Streaming**: Multiple modes (values, updates, messages, debug)
+- **Functional API**: Write workflows as async functions with `#[entrypoint]`/`#[task]` macros, automatic checkpointing, typed reducers
+- **Background Runs & Cron**: REST endpoints for async execution and time-based scheduling
 
 **Run validated graph examples**:
 ```bash

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All `adk-*` crates move from 0.9.x to 0.10.0 in lockstep.
 - **adk-mistralrs: Now a workspace member.** Previously excluded due to git
   dependencies; now included since mistral.rs published to crates.io.
-  Uses workspace `rust-version` (1.96.0).
+  Uses workspace `rust-version` (1.94.0).
 - **adk-core: `LlmResponse` and `LlmRequest` gained public fields.** These structs
   are not `#[non_exhaustive]` and are constructed with struct literals downstream,
   so the additions below are breaking changes for external code that builds them
@@ -27,6 +27,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **adk-graph: Functional API** (feature: `functional`) — Write agent workflows as
+  normal async Rust functions with automatic checkpointing, typed state reducers,
+  and interrupt/resume support. Includes:
+  - `#[entrypoint]` and `#[task]` proc macros in `adk-rust-macros`
+  - `TaskContext` — runtime context with state, checkpointing, streaming, interrupts
+  - `ReducedValue<T>` — append-only state container persisted across checkpoints
+  - `UntrackedValue<T>` — transient state container excluded from checkpoints
+  - `MessagesValue` — chat messages with ID-based deduplication
+  - `TypedReducer` trait with built-in reducers (Replace, Append, Merge)
+  - `StateSchemaValidator` — type-level validation at workflow boundaries
+  - `ExecutionLog` — task completion tracking for resume-skip behavior
+  - Loop iteration checkpoint keying (`"task::iter_N"`)
+  - 3 example crates: `functional_workflow`, `background_runs`, `cron_scheduling`
+- **adk-server: Background Runs** (feature: `background`) — REST API for async
+  workflow execution. `POST /runs` submits a workflow, `GET /runs/{id}` polls status,
+  `DELETE /runs/{id}` cancels. Status transitions: queued → running → completed/failed/cancelled.
+  Timeout enforcement, retry with checkpoint resume, `BackgroundRunner` orchestrator.
+- **adk-server: Cron Scheduling** (feature: `background`) — Cron job management
+  with REST endpoints (POST/GET/PATCH/DELETE /cron). Supports 5-field and 6-field
+  cron expressions, concurrency policies (skip/allow/queue), background scheduling
+  loop, pause/resume lifecycle management.
 - **adk-model: `cancel_response()` for OpenAI background responses** — new method
   on `OpenAIResponsesClient` that calls `POST /v1/responses/{id}/cancel` to cancel
   a running background response. Returns an `LlmResponse` with cancelled status.
@@ -1619,7 +1640,7 @@ let toolset = McpHttpClientBuilder::new("https://api.githubcopilot.com/mcp/")
 
 ### Changed
 - All ADK crates bumped to version 0.2.0
-- Rust edition updated to 2024, requires Rust 1.96+
+- Rust edition updated to 2024, requires Rust 1.94+
 
 ## [0.1.9] - 2026-01-03
 
@@ -1719,7 +1740,7 @@ let toolset = McpHttpClientBuilder::new("https://api.githubcopilot.com/mcp/")
 - **Host flag**: `--host` flag for backend and studio management scripts
 
 ### 🔥 Breaking Changes
-- **Rust 2024 Edition**: All crates now use `edition = "2024"` (requires Rust 1.96+)
+- **Rust 2024 Edition**: All crates now use `edition = "2024"` (requires Rust 1.94+)
 - **Workspace Restructure**: `vendor/gemini-rust` → `adk-gemini`
   - Import paths change from `gemini_rust::*` to `adk_gemini::*`
   - Standardized workspace dependencies for consistency
