@@ -350,6 +350,7 @@ impl ManagedAgentRuntime for DefaultManagedAgentRuntime {
             cancel_token.clone(),
             Arc::clone(&pause_flag),
             Arc::clone(&pause_notify),
+            Arc::clone(&checkpoint),
             Arc::clone(&agent_arc),
             Arc::clone(&self.session_service),
         );

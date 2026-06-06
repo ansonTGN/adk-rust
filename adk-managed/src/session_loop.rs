@@ -34,7 +34,7 @@
 use std::sync::Arc;
 
 use futures::StreamExt;
-use tokio::sync::{broadcast, mpsc, Mutex, Notify};
+use tokio::sync::{broadcast, mpsc, Mutex, Notify, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
@@ -94,8 +94,8 @@ pub struct SessionLoop {
     seq: SequenceCounter,
     /// Custom tool parking lot.
     parking: Arc<ToolParkingLot>,
-    /// Checkpoint manager for durable state.
-    checkpoint: CheckpointManager,
+    /// Checkpoint manager for durable state (shared with ActiveSession for replay).
+    checkpoint: Arc<RwLock<CheckpointManager>>,
     /// Cancellation token for interrupt handling.
     cancel_token: CancellationToken,
     /// Pause flag — when true, the loop parks until resumed.
@@ -133,7 +133,7 @@ impl SessionLoop {
         agent: Arc<dyn Agent>,
         session_service: Arc<dyn SessionService>,
     ) -> Self {
-        let checkpoint = CheckpointManager::new(session_id.clone());
+        let checkpoint = Arc::new(RwLock::new(CheckpointManager::new(session_id.clone())));
         Self {
             session_id,
             event_rx,
@@ -153,8 +153,9 @@ impl SessionLoop {
 
     /// Create a session loop with custom pause controls (for external pause/resume).
     ///
-    /// This allows the runtime to share the pause flag and notify with the
-    /// session handle so that `pause()` and `resume()` can be called externally.
+    /// This allows the runtime to share the pause flag, notify, and checkpoint
+    /// with the session handle so that `pause()`, `resume()`, and `stream_events()`
+    /// (replay) work correctly against the same state the loop writes to.
     #[allow(clippy::too_many_arguments)]
     pub fn with_pause_controls(
         session_id: String,
@@ -164,10 +165,10 @@ impl SessionLoop {
         cancel_token: CancellationToken,
         pause_flag: Arc<Mutex<bool>>,
         pause_notify: Arc<Notify>,
+        checkpoint: Arc<RwLock<CheckpointManager>>,
         agent: Arc<dyn Agent>,
         session_service: Arc<dyn SessionService>,
     ) -> Self {
-        let checkpoint = CheckpointManager::new(session_id.clone());
         Self {
             session_id,
             event_rx,
@@ -577,13 +578,13 @@ impl SessionLoop {
 
     /// Emit a session event: assign to checkpoint and broadcast.
     async fn emit_event(&mut self, event: SessionEvent) {
-        // Checkpoint atomically.
+        // Checkpoint atomically via the shared manager.
         let run_state = RunState {
             seq: self.seq.current(),
             pending_tool_ids: Vec::new(),
             status: self.status,
         };
-        self.checkpoint.checkpoint(event.clone(), run_state);
+        self.checkpoint.write().await.checkpoint(event.clone(), run_state);
 
         // Broadcast to subscribers (ignore if no receivers).
         let _ = self.event_tx.send(event);
@@ -898,6 +899,7 @@ mod tests {
             cancel.clone(),
             Arc::clone(&pause_flag),
             Arc::clone(&pause_notify),
+            Arc::new(RwLock::new(CheckpointManager::new("pause_test".to_string()))),
             agent,
             session_service,
         );
