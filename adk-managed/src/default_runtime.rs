@@ -43,7 +43,7 @@ use adk_core::Agent;
 use adk_core::Memory;
 #[cfg(feature = "sandbox")]
 use adk_sandbox::SandboxBackend;
-use adk_session::service::SessionService;
+use adk_session::service::{CreateRequest, SessionService};
 
 use crate::agent_builder::{build_agent, BuildError};
 use crate::checkpoint::CheckpointManager;
@@ -326,7 +326,22 @@ impl ManagedAgentRuntime for DefaultManagedAgentRuntime {
         let parking = Arc::new(ToolParkingLot::new(DEFAULT_PARKING_TIMEOUT));
         let checkpoint = Arc::new(RwLock::new(CheckpointManager::new(session_id.clone())));
 
-        // 7. Spawn SessionLoop as background task
+        // 7. Seed the session in the SessionService.
+        //    The Runner's run() calls session_service.get() which requires the
+        //    session to exist. We create it here with the same triple
+        //    (app_name="managed", user_id="managed_user", session_id) that
+        //    build_runner/run_str use in the session loop.
+        self.session_service
+            .create(CreateRequest {
+                app_name: "managed".to_string(),
+                user_id: "managed_user".to_string(),
+                session_id: Some(session_id.clone()),
+                state: std::collections::HashMap::new(),
+            })
+            .await
+            .map_err(|e| RuntimeError::internal(format!("failed to seed session: {e}")))?;
+
+        // 8. Spawn SessionLoop as background task
         let session_loop = SessionLoop::with_pause_controls(
             session_id.clone(),
             event_rx,
@@ -340,10 +355,10 @@ impl ManagedAgentRuntime for DefaultManagedAgentRuntime {
         );
         tokio::spawn(session_loop.run());
 
-        // 8. Set initial status to Queued
+        // 9. Set initial status to Queued
         let status = Arc::new(RwLock::new(SessionStatus::Queued));
 
-        // 9. Create and store ActiveSession
+        // 10. Create and store ActiveSession
         let active_session = ActiveSession {
             agent: agent_arc,
             event_tx,
