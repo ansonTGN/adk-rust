@@ -42,6 +42,7 @@ pub(crate) fn inline_attachment_to_text(mime_type: &str, data: &[u8]) -> String 
 #[cfg(any(
     feature = "gemini",
     feature = "openai",
+    feature = "anthropic",
     feature = "ollama",
     feature = "groq",
     feature = "deepseek",
