@@ -8,7 +8,7 @@
 ![Rust](https://img.shields.io/badge/rust-1.94%2B-orange.svg)
 [![GitHub Discussions](https://img.shields.io/github/discussions/zavora-ai/adk-rust?style=flat&logo=github&color=5865F2)](https://github.com/zavora-ai/adk-rust/discussions)
 
-> **🚀 v0.9.2 Released!** Composable Template System — 8 base templates, 9 addons, 5 enterprise patterns via `cargo adk new --addon`. Plus: `cargo adk build` (compile without deploying), provider-aware schema normalization, A2A Simple Scaffolding, and security fixes (hickory-proto, openssl, rubato, similar). See [CHANGELOG](CHANGELOG.md) for full details.
+> **🚀 v1.0.0 Released!** First stable release — 39 crates, semver stability commitment, all former Beta crates promoted to Stable. Plus: `adk-bench` benchmarking framework (4.6× faster cold start vs Python), authoritative `ROADMAP.md`, and security fixes. See [CHANGELOG](CHANGELOG.md) for full details.
 >
 > **Contributors:** Many thanks to [@mikefaille](https://github.com/mikefaille) — AdkIdentity design, realtime audio, LiveKit bridge, skill system. [@rohan-panickar](https://github.com/rohan-panickar) — OpenAI-compatible providers, xAI, multimodal content. [@dhruv-pant](https://github.com/dhruv-pant) — Gemini service account auth. [@tomtom215](https://github.com/tomtom215) — A2A Protocol v1.0.0 types crate ([a2a-protocol-types](https://crates.io/crates/a2a-protocol-types)), Foundation-verified wire types powering our A2A v1 layer. [@danielsan](https://github.com/danielsan) — Google deps issue & PR (#181, #203), RAG crash report (#205). [@CodingFlow](https://github.com/CodingFlow) — Gemini 3 thinking level, global endpoint, citationSources (#177, #178, #179). [@ctylx](https://github.com/ctylx) — skill discovery fix (#204). [@poborin](https://github.com/poborin) — project config proposal (#176). [@chillin-capybara](https://github.com/chillin-capybara) — ACP integration, adk-acp crate. [@baotao2006](https://github.com/baotao2006) — UTF-8 boundary audit, CJK search/skill/eval fixes (#349, #357). [Get started →](https://github.com/zavora-ai/adk-rust/wiki/quickstart)
 >
@@ -180,7 +180,7 @@ Built-in tools:
 | `adk-model` | LLM integrations | Gemini, OpenAI, Anthropic, DeepSeek, Groq, Ollama, Bedrock, Azure AI + OpenAI-compatible presets (Fireworks, Together, Mistral, Perplexity, Cerebras, SambaNova, xAI) |
 | `adk-gemini` | Gemini client | Google Gemini API client with streaming and multimodal support |
 | `adk-anthropic` | Anthropic client | Dedicated Anthropic API client with streaming, thinking, caching, citations, vision, PDF, pricing |
-| `adk-mistralrs` | Native local inference | mistral.rs v0.8.0 — **Gemma 4**, Qwen 3.5, Voxtral, ISQ/MXFP4 quantization, LoRA adapters (git-only) |
+| `adk-mistralrs` | Native local inference | mistral.rs v0.8 — **Gemma 4**, Qwen 3.5, Voxtral, ISQ/MXFP4 quantization, LoRA adapters (git-only) |
 | `adk-tool` | Tool system and extensibility | `FunctionTool`, Google Search, MCP protocol with elicitation, schema validation |
 | `adk-session` | Session and state management | SQLite/in-memory backends, conversation history, state persistence |
 | `adk-artifact` | Artifact storage system | File-based storage, MIME type handling, image/PDF/video support |
@@ -220,7 +220,7 @@ cargo adk new my-agent --template a2a     # A2A protocol agent
 cargo adk new my-agent --template graph   # graph workflow agent
 cargo adk new my-agent --template realtime # realtime voice agent
 
-# Compose with addons (v0.9.2+)
+# Compose with addons
 cargo adk new my-agent --template tools --addon telemetry --addon docker
 cargo adk new my-agent --template api --addon ci --addon monitoring
 
@@ -1023,7 +1023,7 @@ Contributions welcome! Please open an issue or pull request on GitHub.
 
 ## Roadmap
 
-**v0.9.2** (current) — composable templates, cargo adk build, security fixes:
+**v1.0.0** (current) — first stable release:
 - **Composable Template System** — 8 base templates, 9 addons, 5 enterprise patterns via `cargo adk new --addon`.
 - **Cargo Adk Build** — compile-without-deploy subcommand for pre-deployment verification.
 - **A2A Simple Scaffolding** — `A2aServer::quick_start`, `A2aServer::builder`, and `cargo adk new --template a2a`.
