@@ -508,7 +508,7 @@ Exit codes:
 A complete working example demonstrating all features is available:
 
 ```bash
-cargo run -p eval-showcase
+cargo run --manifest-path examples/eval_showcase/Cargo.toml
 ```
 
 See `examples/eval_showcase/` for the source code.

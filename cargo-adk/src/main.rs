@@ -201,6 +201,81 @@ enum AdkCommand {
         #[arg(long, default_value = "1")]
         concurrency: usize,
     },
+
+    /// Run performance benchmarks against real LLM APIs
+    Bench {
+        /// LLM model identifier (e.g., "gemini-2.5-flash")
+        #[arg(long, default_value = "gemini-2.5-flash")]
+        model: String,
+
+        /// Number of measurement iterations per workload
+        #[arg(long, default_value = "5")]
+        runs: usize,
+
+        /// Agent concurrency level (1 = sequential)
+        #[arg(long, default_value = "1")]
+        concurrency: usize,
+
+        /// Specific workload to run (name or file path; omit for all built-in)
+        #[arg(long)]
+        workload: Option<String>,
+
+        /// Output format: "table" (default), "json", "markdown"
+        #[arg(long, default_value = "table")]
+        format: String,
+
+        /// Output file path (omit for stdout)
+        #[arg(long)]
+        output: Option<PathBuf>,
+
+        /// Save results as regression baseline
+        #[arg(long)]
+        save_baseline: bool,
+
+        /// Check results against saved baseline for regressions
+        #[arg(long)]
+        check_regression: bool,
+
+        /// Maximum allowed relative degradation (default 0.10 = 10%)
+        #[arg(long, default_value = "0.10")]
+        tolerance: f64,
+
+        /// Warm-up iterations before measurement begins (discarded)
+        #[arg(long, default_value = "3")]
+        warmup: usize,
+
+        /// Task quality suite to run ("tau2" or "bfcl")
+        #[arg(long)]
+        suite: Option<String>,
+
+        /// Enable concurrency sweep mode (tests levels 1,2,4,8,16,32,64)
+        #[arg(long)]
+        sweep: bool,
+
+        /// Path to external framework configuration JSON file
+        #[arg(long)]
+        external_config: Option<PathBuf>,
+
+        /// Timeout in seconds for external framework runs
+        #[arg(long, default_value = "300")]
+        external_timeout: u64,
+
+        /// Compute and display estimated cost without executing API calls
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Maximum allowed API cost in USD; abort if estimated exceeds limit
+        #[arg(long)]
+        max_cost_usd: Option<f64>,
+
+        /// Skip interactive cost confirmation (auto-confirm when cost > $1.00)
+        #[arg(long)]
+        confirm_cost: bool,
+
+        /// Enable experimental workloads (e.g., multi-agent delegation)
+        #[arg(long)]
+        experimental: bool,
+    },
 }
 
 // ── JSON output types ───────────────────────────────────────────
@@ -395,6 +470,66 @@ fn main() {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
+        }
+        AdkCommand::Bench {
+            model,
+            runs,
+            concurrency,
+            workload,
+            format,
+            output,
+            save_baseline,
+            check_regression,
+            tolerance,
+            warmup,
+            suite,
+            sweep,
+            external_config,
+            external_timeout,
+            dry_run,
+            max_cost_usd,
+            confirm_cost,
+            experimental,
+        } => {
+            // Initialize tracing subscriber for bench (respects RUST_LOG env)
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                        tracing_subscriber::EnvFilter::new(
+                            "adk_bench=info,adk_runner=info,adk_gemini=info",
+                        )
+                    }),
+                )
+                .with_target(true)
+                .with_writer(std::io::stderr)
+                .init();
+
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("failed to create tokio runtime");
+
+            let exit_code = rt.block_on(run_bench(
+                model,
+                runs,
+                concurrency,
+                workload,
+                format,
+                output,
+                save_baseline,
+                check_regression,
+                tolerance,
+                warmup,
+                suite,
+                sweep,
+                external_config,
+                external_timeout,
+                dry_run,
+                max_cost_usd,
+                confirm_cost,
+                experimental,
+            ));
+            std::process::exit(exit_code);
         }
     }
 }
@@ -986,6 +1121,215 @@ async fn run_deploy(
     }
 
     Ok(())
+}
+
+// ── Bench command ───────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+async fn run_bench(
+    model: String,
+    runs: usize,
+    concurrency: usize,
+    workload: Option<String>,
+    format: String,
+    output: Option<PathBuf>,
+    save_baseline: bool,
+    check_regression: bool,
+    tolerance: f64,
+    warmup: usize,
+    suite: Option<String>,
+    sweep: bool,
+    external_config: Option<PathBuf>,
+    external_timeout: u64,
+    dry_run: bool,
+    max_cost_usd: Option<f64>,
+    confirm_cost: bool,
+    experimental: bool,
+) -> i32 {
+    use adk_bench::{
+        BenchConfig, BenchRunner, ComparisonResult, ExternalRunner, OutputFormat,
+        format_comparison, format_result, load_external_configs,
+    };
+
+    // Parse output format
+    let output_format = match format.as_str() {
+        "json" => OutputFormat::Json,
+        "markdown" => OutputFormat::Markdown,
+        _ => OutputFormat::Table,
+    };
+
+    // Parse suite
+    let task_suite = match suite.as_deref() {
+        Some("tau2") => Some(adk_bench::TaskSuite::Tau2),
+        Some("bfcl") => Some(adk_bench::TaskSuite::Bfcl),
+        _ => None,
+    };
+
+    // Load external framework configs if provided
+    let external_frameworks = if let Some(ref config_path) = external_config {
+        match load_external_configs(config_path) {
+            Ok(configs) => configs,
+            Err(e) => {
+                eprintln!("Error loading external config: {e}");
+                return 1;
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
+    // Build concurrency sweep levels
+    let concurrency_sweep = if sweep { Some(vec![1, 2, 4, 8, 16, 32, 64]) } else { None };
+
+    // Construct BenchConfig from CLI flags
+    let config = BenchConfig {
+        model,
+        runs,
+        concurrency,
+        workload,
+        output_format,
+        output_path: output.clone(),
+        warmup,
+        save_baseline,
+        check_regression,
+        tolerance,
+        external_frameworks,
+        external_timeout_secs: external_timeout,
+        concurrency_sweep,
+        suite: task_suite,
+        dry_run,
+        max_cost_usd,
+        confirm_cost,
+        experimental,
+        ..Default::default()
+    };
+
+    // Construct and run BenchRunner
+    let runner = BenchRunner::new(config);
+    let results = match runner.run().await {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return 1;
+        }
+    };
+
+    // If dry-run, results are empty and we're done
+    if dry_run {
+        return 0;
+    }
+
+    // Run external frameworks if configured
+    let external_results = if let Some(ref config_path) = external_config {
+        let ext_runner = ExternalRunner::new(external_timeout);
+        let configs = match load_external_configs(config_path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Warning: failed to reload external configs: {e}");
+                Vec::new()
+            }
+        };
+
+        // Serialize the first workload to a temp file for external runners
+        let workload_file = if let Some(first_result) = results.first() {
+            // Find the matching workload to serialize
+            let workloads = adk_bench::builtin_workloads();
+            let wl = workloads.iter().find(|w| w.name == first_result.workload_name);
+            if let Some(wl) = wl {
+                let tmp_path = std::env::temp_dir().join("adk-bench-workload.json");
+                if let Ok(json) = serde_json::to_string_pretty(wl) {
+                    let _ = std::fs::write(&tmp_path, json);
+                    Some(tmp_path)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let workload_path = workload_file
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "workload.json".to_string());
+
+        let mut ext_results = Vec::new();
+        for ext_config in &configs {
+            match ext_runner.run(ext_config, &workload_path).await {
+                Ok(metrics) => ext_results.push(metrics),
+                Err(e) => {
+                    eprintln!("Warning: external framework '{}' failed: {e}", ext_config.name);
+                }
+            }
+        }
+
+        // Clean up temp file
+        if let Some(ref tmp) = workload_file {
+            let _ = std::fs::remove_file(tmp);
+        }
+
+        ext_results
+    } else {
+        Vec::new()
+    };
+
+    // Format and output results
+    let formatted = if external_results.is_empty() {
+        // Format individual results
+        results.iter().map(|r| format_result(r, output_format)).collect::<Vec<_>>().join("\n\n")
+    } else if let Some(first_result) = results.first() {
+        // Format comparison with external frameworks
+        let comparison = ComparisonResult { adk_result: first_result.clone(), external_results };
+        format_comparison(&comparison, output_format)
+    } else {
+        String::new()
+    };
+
+    // Write output
+    if let Some(ref output_path) = output {
+        if let Err(e) = std::fs::write(output_path, &formatted) {
+            eprintln!("Error writing output to {}: {e}", output_path.display());
+            return 1;
+        }
+    } else {
+        println!("{formatted}");
+    }
+
+    // Save baseline if requested
+    if save_baseline && let Err(e) = runner.save_baseline(&results) {
+        eprintln!("Error saving baseline: {e}");
+        return 1;
+    }
+
+    // Check regression if requested
+    if check_regression {
+        match runner.check_regression(&results) {
+            Ok(regressions) => {
+                if !regressions.is_empty() {
+                    eprintln!("Regressions detected:");
+                    for reg in &regressions {
+                        eprintln!(
+                            "  {} [{}]: baseline={:.1} current={:.1} degradation={:.1}%",
+                            reg.metric_name,
+                            reg.workload_name,
+                            reg.baseline_value,
+                            reg.current_value,
+                            reg.degradation * 100.0,
+                        );
+                    }
+                    return 2;
+                }
+            }
+            Err(e) => {
+                eprintln!("Error checking regression: {e}");
+                return 1;
+            }
+        }
+    }
+
+    0
 }
 
 // ── Eval command ────────────────────────────────────────────────
