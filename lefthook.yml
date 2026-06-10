@@ -9,6 +9,12 @@
 # the gates entirely (lefthook skips a command when no matching files are
 # staged/pushed).
 #
+# Glob notes (lefthook's matcher): `*` crosses `/` (so `*.rs` matches nested
+# files), but `**` requires 1+ directories — so plain `Cargo.toml` only matches
+# the workspace root and `**/Cargo.toml` is needed for per-crate manifests.
+# We intentionally avoid `*.toml`/`*.lock`, which would also match non-Cargo
+# files like rustfmt.toml, deny.toml, and flake.lock.
+#
 # Install hooks once with: lefthook install
 
 pre-commit:
@@ -16,12 +22,20 @@ pre-commit:
   commands:
     fmt:
       tags: format
-      glob: "*.{rs,toml,lock}"
+      glob:
+        - "*.rs"
+        - "Cargo.toml"
+        - "**/Cargo.toml"
+        - "Cargo.lock"
       run: cargo fmt --all -- --check
       fail_text: "Formatting check failed. Run `cargo fmt --all` to fix."
     clippy:
       tags: lint
-      glob: "*.{rs,toml,lock}"
+      glob:
+        - "*.rs"
+        - "Cargo.toml"
+        - "**/Cargo.toml"
+        - "Cargo.lock"
       run: cargo clippy --workspace --all-targets -- -D warnings
       fail_text: "Clippy found warnings. Fix them before committing (zero-warnings policy)."
 
@@ -29,6 +43,10 @@ pre-push:
   commands:
     nextest:
       tags: test
-      glob: "*.{rs,toml,lock}"
+      glob:
+        - "*.rs"
+        - "Cargo.toml"
+        - "**/Cargo.toml"
+        - "Cargo.lock"
       run: cargo nextest run --workspace
       fail_text: "Tests failed. Fix regressions before pushing."
