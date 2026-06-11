@@ -69,6 +69,8 @@ action-full = ["action", "action-trigger", "action-http", "action-db", "action-c
 full = ["sqlite", "action-full"]
 
 [dev-dependencies]
+# Internal dev-deps are path-only (no version) so cargo strips them from the
+# published manifest — they can never block or reorder a crates.io publish.
 tokio = { workspace = true, features = ["rt", "macros", "test-util"] }
 proptest = "1.5"
-adk-action = { workspace = true }
+adk-action = { path = "../adk-action" }
