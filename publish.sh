@@ -1,11 +1,19 @@
 #!/bin/zsh
-# Publish all workspace crates to crates.io in correct dependency order.
-# Tiers generated from `cargo metadata` dependency graph (no dev-deps).
-# Waits for crates.io indexing between publishes.
+# Publish all workspace crates to crates.io.
+#
+# Default mode uses cargo's native workspace publish (cargo >= 1.90), which
+# computes the dependency-correct order itself and verifies each crate against
+# the in-flight set. If a run fails partway (network, rate limit), use
+# --resume: it walks the tiered list below sequentially and skips crates whose
+# version is already on crates.io.
+#
+# Internal dev-deps are path-only (no version), so cargo strips them from
+# published manifests — only normal/build deps constrain publish order.
 #
 # Usage:
-#   ./publish.sh          # publish all
-#   ./publish.sh --resume # skip already-published crates
+#   ./publish.sh           # native workspace publish (recommended)
+#   ./publish.sh --dry-run # native publish, no upload
+#   ./publish.sh --resume  # sequential tiered publish, skip already-published
 
 set -euo pipefail
 
@@ -42,10 +50,10 @@ CRATES=(
   adk-skill
 
   # Tier 4: depends on Tier 1-3
-  adk-agent
-  adk-audio
   adk-runner
   adk-tool
+  adk-agent
+  adk-audio
 
   # Tier 5: depends on Tier 1-4
   adk-acp
@@ -66,7 +74,29 @@ CRATES=(
   adk-rust
 )
 
-echo "=== Publishing ADK-Rust ==="
+MODE="native"
+DRY_RUN=""
+for arg in "$@"; do
+  case "$arg" in
+    --resume)  MODE="resume" ;;
+    --dry-run) DRY_RUN="--dry-run" ;;
+    *) echo "unknown flag: $arg"; exit 2 ;;
+  esac
+done
+
+if [[ "$MODE" == "native" ]]; then
+  echo "=== Publishing ADK-Rust (cargo publish --workspace) ==="
+  echo "Crates: ${#CRATES[@]}  $DRY_RUN"
+  echo "If this fails partway, finish with: ./publish.sh --resume"
+  echo ""
+  cargo publish --workspace ${DRY_RUN:+$DRY_RUN}
+  echo "✅ Done"
+  exit 0
+fi
+
+# ── Resume mode: sequential tiered publish, skipping published crates ──────
+
+echo "=== Publishing ADK-Rust (sequential resume) ==="
 echo "Total crates: ${#CRATES[@]}"
 echo ""
 
@@ -80,8 +110,8 @@ for crate in "${CRATES[@]}"; do
   echo "📦 [$((PUBLISHED + SKIPPED + FAILED + 1))/${#CRATES[@]}] Publishing: $crate"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-  OUTPUT=$(cargo publish -p "$crate" 2>&1)
-  STATUS=$?
+  STATUS=0
+  OUTPUT=$(cargo publish -p "$crate" 2>&1) || STATUS=$?
 
   echo "$OUTPUT"
   echo ""
@@ -116,5 +146,6 @@ if [ ${#FAILED_CRATES[@]} -gt 0 ]; then
   for c in "${FAILED_CRATES[@]}"; do
     echo "- $c"
   done
+  exit 1
 fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
