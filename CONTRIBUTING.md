@@ -157,7 +157,9 @@ The repo ships a `lefthook.yml` that wires the [Quality Gates](#quality-gates) i
 
 The shellcheck gate only runs when shell scripts are staged, and runs at `--severity=warning` so informational notes (e.g. SC1091 about sourced files that can't be followed) don't block commits. `publish.sh` is skipped because it's a zsh script, which shellcheck doesn't support. Install shellcheck with `brew install shellcheck` (macOS) or `apt install shellcheck` (Debian/Ubuntu); `scripts/setup-dev.sh` installs it for you.
 
-Install [lefthook](https://github.com/evilmartians/lefthook):
+**devenv users: nothing to do.** The dev shell ships `lefthook` and `shellcheck` and registers the hooks automatically on shell entry — lefthook is the single hook manager for this repo (devenv's own `git-hooks` integration is not used, so the two never fight over `.git/hooks`).
+
+Everyone else, install [lefthook](https://github.com/evilmartians/lefthook):
 
 ```bash
 brew install lefthook        # macOS
