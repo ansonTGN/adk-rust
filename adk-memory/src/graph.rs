@@ -430,9 +430,15 @@ CREATE INDEX IF NOT EXISTS idx_kg_epi ON kg_episodic(app_name, user_id);",
         Ok(row.try_get::<i64, _>("cnt").unwrap_or(0) as usize)
     }
 
-    /// Score entities against a free-text query (name/type/observation substring),
-    /// returning the best matches with their current relations. Only currently-valid
-    /// facts are considered.
+    /// Score entities against a free-text query, returning the best matches with
+    /// their current relations. Only currently-valid facts are considered.
+    ///
+    /// The query is split into content tokens (see [`tokenize`]); an entity
+    /// scores per token found in its name (×3), type (×2), or observations (×1),
+    /// so a multi-word recall query like "dietary notes and allergies" matches an
+    /// entity whose facts mention "allergic" or "peanuts" — which a whole-string
+    /// substring match would miss. Matching is still substring-on-token (no
+    /// stemming or embeddings).
     pub async fn search_nodes(
         &self,
         app_name: &str,
@@ -440,20 +446,24 @@ CREATE INDEX IF NOT EXISTS idx_kg_epi ON kg_episodic(app_name, user_id);",
         query: &str,
         limit: usize,
     ) -> Result<Vec<GraphSearchResult>> {
-        let q = query.to_lowercase();
+        let tokens = tokenize(query);
         let mut results = Vec::new();
 
         for entity in self.load_entities(app_name, user_id, None).await? {
+            let name = entity.name.to_lowercase();
+            let ty = entity.entity_type.to_lowercase();
             let mut score = 0.0;
-            if entity.name.to_lowercase().contains(&q) {
-                score += 3.0;
-            }
-            if entity.entity_type.to_lowercase().contains(&q) {
-                score += 2.0;
-            }
-            for obs in &entity.observations {
-                if obs.content.to_lowercase().contains(&q) {
-                    score += 1.0;
+            for t in &tokens {
+                if name.contains(t) {
+                    score += 3.0;
+                }
+                if ty.contains(t) {
+                    score += 2.0;
+                }
+                for obs in &entity.observations {
+                    if obs.content.to_lowercase().contains(t) {
+                        score += 1.0;
+                    }
                 }
             }
             if score > 0.0 {
@@ -634,7 +644,11 @@ CREATE INDEX IF NOT EXISTS idx_kg_epi ON kg_episodic(app_name, user_id);",
         Ok(rows.into_iter().map(row_to_relation).collect())
     }
 
-    /// Recent raw turns matching `query` (substring), newest first.
+    /// Recent raw turns ranked by query-token overlap (newest first within ties).
+    ///
+    /// Scans a bounded window of the most recent turns and keeps those mentioning
+    /// at least one query token, ranked by how many distinct tokens they contain —
+    /// the episodic counterpart of [`search_nodes`](Self::search_nodes)'s scoring.
     async fn recall_episodic(
         &self,
         app_name: &str,
@@ -642,30 +656,76 @@ CREATE INDEX IF NOT EXISTS idx_kg_epi ON kg_episodic(app_name, user_id);",
         query: &str,
         limit: usize,
     ) -> Result<Vec<MemoryEntry>> {
-        let like = format!("%{query}%");
+        let tokens = tokenize(query);
+        // Bounded recent window; ranking happens in Rust to keep the SQL simple
+        // and injection-safe regardless of token count.
+        const WINDOW: i64 = 200;
         let rows = sqlx::query(
             "SELECT author, text, timestamp FROM kg_episodic \
-             WHERE app_name=?1 AND user_id=?2 AND text LIKE ?3 \
-             ORDER BY id DESC LIMIT ?4",
+             WHERE app_name=?1 AND user_id=?2 \
+             ORDER BY id DESC LIMIT ?3",
         )
         .bind(app_name)
         .bind(user_id)
-        .bind(&like)
-        .bind(limit as i64)
+        .bind(WINDOW)
         .fetch_all(&self.pool)
         .await
         .map_err(map_sql)?;
 
-        Ok(rows
+        // (token_overlap, entry); rows arrive newest-first, and the sort below is
+        // stable, so equal-overlap turns stay in recency order.
+        let mut scored: Vec<(usize, MemoryEntry)> = rows
             .into_iter()
-            .map(|r| MemoryEntry {
-                content: Content::new(r.get::<String, _>("author"))
-                    .with_text(r.get::<String, _>("text")),
-                author: r.get::<String, _>("author"),
-                timestamp: parse_ts(&r.get::<String, _>("timestamp")),
+            .filter_map(|r| {
+                let text: String = r.get("text");
+                let lc = text.to_lowercase();
+                let overlap = tokens.iter().filter(|t| lc.contains(t.as_str())).count();
+                if overlap == 0 {
+                    return None;
+                }
+                let author: String = r.get("author");
+                Some((
+                    overlap,
+                    MemoryEntry {
+                        content: Content::new(author.clone()).with_text(text),
+                        author,
+                        timestamp: parse_ts(&r.get::<String, _>("timestamp")),
+                    },
+                ))
             })
-            .collect())
+            .collect();
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        Ok(scored.into_iter().take(limit).map(|(_, m)| m).collect())
     }
+}
+
+/// Split a free-text query into lowercase content tokens for relevance matching.
+///
+/// Splits on non-alphanumeric boundaries, drops very short tokens and common
+/// stopwords, and de-duplicates. Falls back to the whole trimmed query when
+/// nothing survives, so short or single-word queries still match.
+fn tokenize(query: &str) -> Vec<String> {
+    const STOPWORDS: &[&str] = &[
+        "the", "and", "you", "your", "yours", "for", "with", "what", "that", "this", "are", "was",
+        "has", "have", "had", "about", "when", "where", "which", "will", "can", "did", "does",
+        "into", "from", "they", "them", "our", "but", "not", "any", "all", "know", "tell", "there",
+        "their", "would", "should", "could", "been", "were", "who",
+    ];
+    let mut tokens: Vec<String> = query
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3 && !STOPWORDS.contains(t))
+        .map(str::to_string)
+        .collect();
+    tokens.sort();
+    tokens.dedup();
+    if tokens.is_empty() {
+        let q = query.trim().to_lowercase();
+        if !q.is_empty() {
+            tokens.push(q);
+        }
+    }
+    tokens
 }
 
 /// Render a search result as a single compact line of fact text.
@@ -867,6 +927,76 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].entity.name, "Shai");
         assert_eq!(hits[0].relations.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn search_matches_individual_query_tokens() {
+        let kg = svc().await;
+        kg.create_entities(
+            "app",
+            "alex",
+            vec![CreateEntityInput {
+                name: "Alex".into(),
+                entity_type: "person".into(),
+                observations: vec!["vegetarian".into(), "severely allergic to peanuts".into()],
+            }],
+        )
+        .await
+        .unwrap();
+
+        // Tokens "peanuts" + "vegetarian" live in separate observations; a
+        // whole-string substring of this query would score nothing.
+        let hits =
+            kg.search_nodes("app", "alex", "peanuts and vegetarian dishes", 5).await.unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].entity.name, "Alex");
+
+        // No shared token → no match.
+        let none = kg.search_nodes("app", "alex", "quarterly revenue forecast", 5).await.unwrap();
+        assert!(none.is_empty());
+    }
+
+    #[tokio::test]
+    async fn episodic_recall_ranks_by_token_overlap() {
+        let kg = svc().await;
+        kg.add_session(
+            "app",
+            "alex",
+            "s1",
+            vec![
+                entry("user", "I am training for a marathon in April"),
+                entry("user", "I work at Acme Corp as a data engineer"),
+            ],
+        )
+        .await
+        .unwrap();
+
+        // No entities exist, so search() falls through to token-based episodic
+        // recall; "work" matches the Acme turn but not the marathon one.
+        let resp = kg
+            .search(SearchRequest {
+                query: "where does the user work".into(),
+                user_id: "alex".into(),
+                app_name: "app".into(),
+                limit: Some(5),
+                min_score: None,
+                project_id: None,
+            })
+            .await
+            .unwrap();
+        let joined: String =
+            resp.memories.iter().map(|m| content_text(&m.content)).collect::<Vec<_>>().join(" ");
+        assert!(joined.contains("Acme"), "expected the Acme turn; got: {joined}");
+        assert!(!joined.contains("marathon"), "marathon turn shares no token; got: {joined}");
+    }
+
+    #[test]
+    fn tokenize_drops_stopwords_and_short_tokens() {
+        let t = tokenize("What do you know about my allergies?");
+        assert!(t.contains(&"allergies".to_string()));
+        assert!(!t.iter().any(|w| w == "you" || w == "what" || w == "do"));
+        // All-stopword/short query falls back to the whole trimmed query.
+        assert_eq!(tokenize("is it?"), vec!["is it?".to_string()]);
     }
 
     #[tokio::test]
