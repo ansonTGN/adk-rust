@@ -1224,9 +1224,9 @@
         }
     }
 
-    // Wipe the user's graph and re-seed the baseline profile (server-side).
+    // Permanently clear Mia's entire memory (server-side).
     async function resetSystem() {
-        if (!confirm('Reset memory to the seeded baseline profile?')) return;
+        if (!confirm('Clear ALL of Mia’s memory — insights, guidelines, and learned facts? This cannot be undone.')) return;
         try {
             const res = await fetch('/api/memory/reset', { method: 'POST' });
             if (!res.ok) throw new Error(`reset failed: ${res.status}`);
@@ -1237,7 +1237,7 @@
             renderGuidelines(data.entities || []);
             updateContextCount();
             clearDecisions();   // also clear the session-scoped pipeline log
-            addDecision('Memory reset to the seeded baseline profile.');
+            addDecision('Memory cleared — Mia now knows nothing about the user.');
         } catch (e) {
             console.error(e);
             addDecision('Failed to reset memory.');

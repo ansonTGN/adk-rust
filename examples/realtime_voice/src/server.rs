@@ -122,12 +122,18 @@ pub async fn run_server(port: u16) -> anyhow::Result<()> {
     // One process-wide, file-backed knowledge graph. Survives restarts so Mia
     // remembers Shai across sessions.
     let db = std::env::var("MIA_MEMORY_DB").unwrap_or_else(|_| "mia_memory.db".to_string());
+    // Seed the demo profile only for a brand-new database. After "Reset System"
+    // wipes the graph the file still exists, so the wipe stays wiped across
+    // restarts; delete the db file to get the baseline back.
+    let fresh_db = db != ":memory:" && !std::path::Path::new(&db).exists();
     let kg = GraphMemoryService::new(&format!("sqlite:{db}"))
         .await
         .map_err(|e| anyhow::anyhow!("memory open failed: {e}"))?;
     kg.migrate().await.map_err(|e| anyhow::anyhow!("memory migrate failed: {e}"))?;
-    seed_profile(&kg).await?;
-    info!(db = %db, "knowledge-graph memory ready");
+    if fresh_db {
+        seed_profile(&kg).await?;
+    }
+    info!(db = %db, seeded = fresh_db, "knowledge-graph memory ready");
 
     let state = AppState { kg: Arc::new(kg) };
 
@@ -306,15 +312,14 @@ async fn add_memory(
     }
 }
 
-/// `POST /api/memory/reset` — wipe the user's graph and re-seed the baseline
-/// profile, then return it. ("Reset to baseline", not "delete forever".)
+/// `POST /api/memory/reset` — permanently wipe the user's entire graph
+/// (entities, observations, relations, episodic log) and return the now-empty
+/// graph. This is a true clear, not a reset-to-baseline; the demo profile is
+/// only seeded for a brand-new database.
 async fn reset_memory(State(state): State<AppState>) -> impl IntoResponse {
     use adk_memory::MemoryService;
     if let Err(e) = state.kg.delete_user(APP_NAME, USER_ID).await {
         return error_json(anyhow::anyhow!("{e}"));
-    }
-    if let Err(e) = seed_profile(&state.kg).await {
-        return error_json(e);
     }
     match graph_to_json(&state.kg).await {
         Ok(v) => Json(v).into_response(),

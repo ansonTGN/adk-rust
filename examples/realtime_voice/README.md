@@ -16,7 +16,7 @@ happen server-side. The browser is a thin audio device.
 | **Session persistence** | Completed turns persisted to a `SessionService` |
 | **Knowledge-graph memory** | A file-backed `GraphMemoryService` (bi-temporal KG) is Mia's long-term memory: her profile card is injected into the system prompt at session start, and every turn is logged to the graph's episodic store |
 | **Agent self-curation** | Mia can write durable facts back into the graph mid-conversation via the `remember`/`relate` tools (`adk-tool`'s `graph-memory-tools`, auto-bridged to realtime) — so what she learns this session becomes her profile next session |
-| **Live memory panel** | The "User Memory Insights" panel reads and writes the **same** graph over `/api/memory` — add a fact, reset to baseline, all server-side; it refreshes after each turn, so facts Mia saves appear live |
+| **Live memory panel** | The "User Memory Insights" panel reads and writes the **same** graph over `/api/memory` — add a fact, clear all memory, all server-side; it refreshes after each turn, so facts Mia saves appear live |
 | **Tool calling** | `get_weather` executed **server-side**; the result is fed back to the model |
 | **VAD** | Server-side voice activity detection for natural turn-taking |
 | **Coaching persona** | "Mia" mindfulness coach with guidelines and preferences |
@@ -67,12 +67,14 @@ agent and the "User Memory Insights" panel are looking at the *same* memory:
   `(app_name, user_id)` by the integration layer (`.adk_tool(...)`).
 - **The panel** reads `GET /api/memory` and writes `POST /api/memory`
   (add an observation under a category/entity) and `POST /api/memory/reset`
-  (wipe and re-seed the baseline profile). It also re-fetches after each turn,
-  so a fact Mia just saved appears without a refresh.
+  (**permanently clear** the user's entire graph). It also re-fetches after each
+  turn, so a fact Mia just saved appears without a refresh.
 
 The graph is file-backed (`mia_memory.db` by default, override with
-`MIA_MEMORY_DB`), so Mia remembers Shai across restarts. On first run an empty
-graph is seeded with Shai's baseline profile.
+`MIA_MEMORY_DB`), so Mia remembers Shai across restarts. The baseline profile is
+seeded **only for a brand-new database** — so **Reset System** is a true wipe
+that stays wiped across restarts. To get the demo profile back, delete the
+`mia_memory.db` file (or point `MIA_MEMORY_DB` at a fresh path) and restart.
 
 > The agent curates the graph *explicitly* (it decides to call `remember`).
 > *Automatic* distillation of raw turns into entities/relations — an out-of-band
@@ -147,7 +149,7 @@ cargo run --manifest-path examples/realtime_voice/Cargo.toml -- probe gemini
   active memory cache (top facts from the graph), coaching guidelines, MIA/USER
   status.
 - **Right panel** — **User Memory Insights** (rendered from the live knowledge
-  graph; add a fact or reset to baseline), Coaching Strategy, and a live
+  graph; add a fact or clear all memory), Coaching Strategy, and a live
   Pipeline Decisions log (tool calls and session events).
 
 ## Feature Flags
