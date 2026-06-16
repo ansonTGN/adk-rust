@@ -72,6 +72,9 @@
 #[cfg(feature = "ambient")]
 pub mod ambient;
 
+#[cfg(feature = "coding")]
+pub mod coding;
+
 pub mod compaction;
 mod custom_agent;
 pub mod guardrails;
