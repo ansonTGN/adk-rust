@@ -79,6 +79,46 @@ pub enum Commands {
         read_only: bool,
     },
 
+    /// Autonomous goal mode: work until a verifiable success condition passes.
+    ///
+    /// The agent loops plan → act → verify, self-correcting from the check's
+    /// output, until `--until` exits 0 or the iteration budget is reached.
+    /// Example: `adk-rust goal "make all tests pass" --until "cargo test"`
+    Goal {
+        /// The high-level goal.
+        goal: String,
+
+        /// Shell command whose exit code 0 means "goal met" (the success condition).
+        #[arg(long)]
+        until: String,
+
+        /// Workspace directory the agent operates in (sandboxed).
+        #[arg(short, long, default_value = ".")]
+        dir: String,
+
+        /// Maximum number of plan→act→verify iterations (budget).
+        #[arg(long, default_value_t = 8)]
+        max_iters: u32,
+    },
+
+    /// Ultracode: fan out to parallel specialist reviewers and iterate.
+    ///
+    /// Implements the task, then runs correctness/edge-case/style reviewers in
+    /// parallel, synthesizes their verdicts, and revises until they approve.
+    /// Example: `adk-rust ultracode "add a /health endpoint"`
+    Ultracode {
+        /// The task to implement and review.
+        task: String,
+
+        /// Workspace directory the agent operates in (sandboxed).
+        #[arg(short, long, default_value = ".")]
+        dir: String,
+
+        /// Maximum number of review→revise rounds.
+        #[arg(long, default_value_t = 2)]
+        max_rounds: i64,
+    },
+
     /// Skills tooling (list/validate/match)
     Skills {
         #[command(subcommand)]
