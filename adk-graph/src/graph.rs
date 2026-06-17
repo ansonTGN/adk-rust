@@ -1,6 +1,7 @@
 //! StateGraph builder for constructing graphs
 
 use crate::checkpoint::Checkpointer;
+use crate::deferred::DeferredNodeConfig;
 use crate::edge::{END, Edge, EdgeTarget, RouterFn, START};
 use crate::error::{GraphError, Result};
 use crate::node::{FunctionNode, Node, NodeContext, NodeOutput};
@@ -17,12 +18,14 @@ pub struct StateGraph {
     pub nodes: HashMap<String, Arc<dyn Node>>,
     /// Registered edges
     pub edges: Vec<Edge>,
+    /// Fan-in (deferred) node configurations, keyed by node name.
+    pub deferred_configs: HashMap<String, DeferredNodeConfig>,
 }
 
 impl StateGraph {
     /// Create a new graph with the given state schema
     pub fn new(schema: StateSchema) -> Self {
-        Self { schema, nodes: HashMap::new(), edges: vec![] }
+        Self { schema, nodes: HashMap::new(), edges: vec![], deferred_configs: HashMap::new() }
     }
 
     /// Create with a simple schema (just channel names, all overwrite)
@@ -43,6 +46,53 @@ impl StateGraph {
         Fut: Future<Output = Result<NodeOutput>> + Send + 'static,
     {
         self.add_node(FunctionNode::new(name, func))
+    }
+
+    /// Add a **fan-in** (deferred) function node.
+    ///
+    /// Unlike [`add_node_fn`](Self::add_node_fn), a deferred node does not run as
+    /// soon as one upstream edge completes — the scheduler holds it until **all**
+    /// upstream paths that can reach it have finished (or, with a configured
+    /// `fan_in_timeout`, until that deadline). This is what makes a fan-out /
+    /// fan-in pattern correct: several branches run in parallel and a single
+    /// aggregator node runs once, after they all complete.
+    ///
+    /// The [`DeferredNodeConfig`] selects how the upstream outputs are exposed
+    /// (e.g. [`MergeStrategy::Collect`](crate::deferred::MergeStrategy::Collect))
+    /// and an optional fan-in timeout.
+    ///
+    /// # Example
+    /// ```ignore
+    /// use adk_graph::{StateGraph, DeferredNodeConfig, MergeStrategy};
+    /// let graph = StateGraph::with_channels(&["x"])
+    ///     .add_node_fn("a", |_| async { Ok(Default::default()) })
+    ///     .add_node_fn("b", |_| async { Ok(Default::default()) })
+    ///     .add_deferred_node_fn("join", |_| async { Ok(Default::default()) },
+    ///         DeferredNodeConfig { merge_strategy: MergeStrategy::Collect, fan_in_timeout: None })
+    ///     .add_edge("a", "join")
+    ///     .add_edge("b", "join");
+    /// ```
+    pub fn add_deferred_node_fn<F, Fut>(
+        mut self,
+        name: &str,
+        func: F,
+        config: DeferredNodeConfig,
+    ) -> Self
+    where
+        F: Fn(NodeContext) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<NodeOutput>> + Send + 'static,
+    {
+        self.deferred_configs.insert(name.to_string(), config);
+        self.add_node(FunctionNode::new(name, func))
+    }
+
+    /// Mark an already-added node as a fan-in (deferred) node.
+    ///
+    /// Useful when the node was registered via [`add_node`](Self::add_node) with
+    /// a custom [`Node`] implementation.
+    pub fn mark_deferred(mut self, name: &str, config: DeferredNodeConfig) -> Self {
+        self.deferred_configs.insert(name.to_string(), config);
+        self
     }
 
     /// Add a direct edge from source to target
@@ -129,7 +179,7 @@ impl StateGraph {
             recursion_limit: 50,
             timeout_policies: HashMap::new(),
             default_timeout: None,
-            deferred_configs: HashMap::new(),
+            deferred_configs: self.deferred_configs,
             #[cfg(feature = "node-cache")]
             cache_policies: HashMap::new(),
         })

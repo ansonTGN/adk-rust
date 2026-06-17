@@ -19,6 +19,7 @@ adk-skill = { workspace = true, optional = true }
 adk-guardrail = { workspace = true, optional = true }
 adk-plugin = { workspace = true, optional = true }
 adk-sandbox = { workspace = true, optional = true }
+adk-devtools = { workspace = true, optional = true }
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["time", "sync", "rt"] }
 futures = { workspace = true }
@@ -39,6 +40,7 @@ guardrails = ["adk-guardrail"]
 enhanced-plugins = ["dep:adk-plugin"]
 skills = ["dep:adk-skill"]
 sandbox = ["dep:adk-sandbox", "adk-sandbox/workspace"]
+coding = ["dep:adk-devtools"]
 record-payloads = []
 ambient = ["dep:cron", "dep:notify", "dep:axum"]
 

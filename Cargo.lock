@@ -93,6 +93,7 @@ name = "adk-agent"
 version = "1.1.0"
 dependencies = [
  "adk-core",
+ "adk-devtools",
  "adk-guardrail",
  "adk-model",
  "adk-plugin",
@@ -301,6 +302,7 @@ dependencies = [
  "adk-artifact",
  "adk-core",
  "adk-deploy",
+ "adk-devtools",
  "adk-graph",
  "adk-model",
  "adk-runner",
@@ -384,6 +386,23 @@ dependencies = [
  "tracing",
  "url",
  "uuid 1.23.2",
+]
+
+[[package]]
+name = "adk-devtools"
+version = "1.1.0"
+dependencies = [
+ "adk-core",
+ "async-trait",
+ "glob",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "walkdir",
 ]
 
 [[package]]
