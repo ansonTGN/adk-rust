@@ -9,10 +9,17 @@ With `MontyRuntime`, a `CodeAgent` *acts by writing Python*: each turn the model
 emits a script, invokes your `Tool`s with the built-in
 `call_tool("name", {"arg": value})` function, composes their results with real
 control flow, and returns a tagged value. Monty runs that
-script in-process in microseconds — no container, no subprocess, no
-filesystem/network access — and can snapshot a paused run to bytes, which is
-exactly what the CodeAct suspend/resume model (HITL confirmation, long-running
-tools, durable checkpoints) needs.
+script in-process in microseconds — no container, no subprocess — and can
+snapshot a paused run to bytes, which is exactly what the CodeAct suspend/resume
+model (HITL confirmation, long-running tools, durable checkpoints) needs.
+
+Operating-system effects a script attempts — filesystem reads/writes,
+`os.getenv`/`os.environ`, and `date.today()`/`datetime.now()` — are serviced
+in-place against a host-controlled OS-access policy. They are **not** tools and
+never pause the agent loop. By default a runtime is fully sandboxed (no
+filesystem access, an empty environment), but you can grant a script specific
+read-only or read-write paths and an explicit environment map (see
+[OS access](#os-access) below).
 
 ## Why a separate crate (outside the workspace)?
 
@@ -116,10 +123,52 @@ positional and keyword arguments separately, and the CodeAct driver binds them
 onto the tool's parameters via `bind_call_args`. The adapter is therefore
 stateless.
 
-Monty's other suspension points are handled in-place by the runtime: OS/file
-calls are refused (this is a pure sandbox), an undefined-name reference raises
-`NameError`, and a blocked `await` is refused to steer the model toward
-synchronous tool calls.
+Monty's other suspension points are handled in-place by the runtime: OS calls
+(filesystem, environment, clock) are serviced against the OS-access policy and
+resumed immediately, an undefined-name reference raises `NameError`, and a
+blocked `await` is refused to steer the model toward synchronous tool calls.
+
+## OS access
+
+Monty surfaces every operating-system effect a script attempts as an OS call the
+host resolves. The runtime services these **in place** — they never become tool
+calls and never pause the agent loop — bounded by an `OsAccess` policy:
+
+- **Filesystem.** Only directories you mount with `allow_path` are reachable,
+  each read-only or read-write. A script reaches them through `pathlib.Path`
+  against the *virtual* mount path; Monty enforces the boundary
+  (canonicalization + symlink-escape detection), so a script can never touch a
+  host path outside a mount. Access outside every mount raises `PermissionError`
+  (existence checks return `False`, matching CPython). Monty implements only a
+  subset of `pathlib.Path`, so when paths are mounted the prompt lists the exact
+  supported methods — read/query (`exists`, `is_file`, `is_dir`, `is_symlink`,
+  `read_text`, `read_bytes`, `stat`, `iterdir`, `resolve`, `absolute`, `open`),
+  write (`write_text`, `write_bytes`, `append_text`, `append_bytes`, `mkdir`,
+  `unlink`, `rmdir`, `rename`), and pure path ops (`/`, `joinpath`,
+  `is_absolute`, `with_name`, `with_stem`, `with_suffix`, `as_posix`, and the
+  `name`/`parent`/`stem`/`suffix`/`suffixes`/`parts` properties). Any other
+  method raises `AttributeError`.
+- **Environment.** `os.getenv(name)` and `os.environ` read the explicit string
+  map you supply with `environ` / `environ_var`. Empty by default, so the host
+  process environment (and any secrets in it) is never exposed implicitly.
+- **Clock.** `date.today()` and `datetime.now()` read the host clock unless you
+  disable them with `system_clock(false)`.
+
+Network and subprocess access have no Monty OS-call surface and remain
+unavailable regardless of policy.
+
+```rust
+use adk_codeact_monty::{MontyRuntime, PathAccess};
+
+let runtime = MontyRuntime::builder()
+    .allow_path("/data", "/srv/agent/data", PathAccess::ReadOnly)
+    .allow_path("/out", "/srv/agent/out", PathAccess::ReadWrite)
+    .environ_var("PROJECT", "acme")
+    .build();
+```
+
+The granted access is described to the model in the system prompt, so it knows
+which paths it may read or write and which environment variables exist.
 
 ## Notes on the CodeAgent API (dogfooding feedback)
 

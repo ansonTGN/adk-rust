@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use adk_agent::codeact::{CodeRuntime, ResumeWith, RunStep};
-use adk_codeact_monty::MontyRuntime;
+use adk_codeact_monty::{MontyRuntime, PathAccess};
 use serde_json::{Value, json};
 
 /// Collapse a call's keyword arguments into a JSON object for assertions.
@@ -267,9 +267,10 @@ for i in range(100000000):
 }
 
 #[test]
-fn filesystem_access_is_refused_as_a_raised_step() {
-    // This runtime is a pure sandbox: an attempt to touch the filesystem is
-    // refused with an exception that propagates to a `RunStep::Raised`.
+fn unmounted_filesystem_read_raises_permission_error() {
+    // The default runtime grants no filesystem access, so a read outside every
+    // mount raises `PermissionError`, which propagates to a `RunStep::Raised`.
+    // The OS call is serviced in-place — it never surfaces as a tool call.
     let rt = MontyRuntime::new();
     let script = "\
 from pathlib import Path
@@ -281,8 +282,8 @@ data = Path(\"/etc/passwd\").read_text()
     match step {
         RunStep::Raised { message, .. } => {
             assert!(
-                message.contains("disabled in this sandbox"),
-                "expected the sandbox refusal message, got: {message}"
+                message.contains("PermissionError"),
+                "expected a permission error, got: {message}"
             );
         }
         other => panic!("expected Raised, got {other:?}"),
@@ -290,16 +291,85 @@ data = Path(\"/etc/passwd\").read_text()
 }
 
 #[test]
-fn environment_access_is_refused_as_a_raised_step() {
-    // Environment access is blocked just like the filesystem. A script that
-    // does not catch the refusal surfaces it as a `RunStep::Raised`.
+fn empty_environment_returns_getenv_default_without_pausing() {
+    // The default environment is empty, so `os.getenv` returns its default
+    // (`None`) and the script completes — the OS call is serviced in-place, not
+    // turned into a tool call.
     let rt = MontyRuntime::new();
     let script = "\
 import os
-home = os.getenv(\"HOME\")
+home = os.getenv(\"HOME\", \"unset\")
 {\"type\": \"final_result\", \"value\": home}
 ";
-    let step =
-        rt.start(script, "test").expect("a refused OS call is a script error, not a host error");
-    assert!(matches!(step, RunStep::Raised { .. }), "expected Raised, got {step:?}");
+    let step = run(&rt, script, |_, _| panic!("os.getenv must not become a tool call"));
+    match step {
+        RunStep::Complete { value, .. } => {
+            assert_eq!(value, json!({"type": "final_result", "value": "unset"}));
+        }
+        other => panic!("expected Complete, got {other:?}"),
+    }
+}
+
+#[test]
+fn granted_environment_is_readable_in_place() {
+    // An explicit environment map is exposed via `os.getenv` / `os.environ`.
+    let rt = MontyRuntime::builder().environ_var("PROJECT", "acme").build();
+    let script = "\
+import os
+{\"type\": \"final_result\", \"value\": os.getenv(\"PROJECT\")}
+";
+    let step = run(&rt, script, |_, _| panic!("os.getenv must not become a tool call"));
+    match step {
+        RunStep::Complete { value, .. } => {
+            assert_eq!(value, json!({"type": "final_result", "value": "acme"}));
+        }
+        other => panic!("expected Complete, got {other:?}"),
+    }
+}
+
+#[test]
+fn granted_read_path_is_readable_in_place() {
+    // A mounted directory is reachable through `pathlib.Path` against its
+    // virtual path. The filesystem OS call is serviced in-place — it never
+    // surfaces as a tool call.
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::write(dir.path().join("note.txt"), "hello from host").expect("write fixture");
+
+    let rt = MontyRuntime::builder().allow_path("/data", dir.path(), PathAccess::ReadOnly).build();
+    let script = "\
+from pathlib import Path
+{\"type\": \"final_result\", \"value\": Path(\"/data/note.txt\").read_text()}
+";
+    let step = run(&rt, script, |_, _| panic!("a filesystem read must not become a tool call"));
+    match step {
+        RunStep::Complete { value, .. } => {
+            assert_eq!(value, json!({"type": "final_result", "value": "hello from host"}));
+        }
+        other => panic!("expected Complete, got {other:?}"),
+    }
+}
+
+#[test]
+fn read_only_mount_refuses_writes() {
+    // A read-only mount lets reads through but raises `PermissionError` on a
+    // write attempt.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let rt = MontyRuntime::builder().allow_path("/data", dir.path(), PathAccess::ReadOnly).build();
+    let script = "\
+from pathlib import Path
+Path(\"/data/new.txt\").write_text(\"nope\")
+{\"type\": \"final_result\", \"value\": \"unreachable\"}
+";
+    let step = rt.start(script, "test").expect("a refused write is a script error");
+    match step {
+        RunStep::Raised { message, .. } => {
+            assert!(
+                message.contains("PermissionError") || message.contains("Read-only"),
+                "expected a read-only refusal, got: {message}"
+            );
+        }
+        other => panic!("expected Raised, got {other:?}"),
+    }
+    // The host file was never created.
+    assert!(!dir.path().join("new.txt").exists(), "read-only mount must not write");
 }

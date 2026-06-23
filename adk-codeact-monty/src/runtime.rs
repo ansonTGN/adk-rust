@@ -15,8 +15,9 @@
 //! finishes ([`RunStep::Complete`]). The other Monty suspension points are
 //! resolved in-place by the runtime:
 //!
-//! - an **OS call** (file/network/env) is refused with an exception, since this
-//!   runtime is a pure sandbox;
+//! - an **OS call** (filesystem, environment, clock) is serviced against the
+//!   host's [`OsAccess`] policy and resumed immediately — OS calls are never
+//!   tools and never pause the agent loop;
 //! - a **name lookup** for an undefined name raises `NameError`;
 //! - a blocked **`await`** on external futures is refused, steering the model
 //!   toward synchronous tool calls.
@@ -55,6 +56,7 @@ use monty::{
 use serde_json::Value;
 
 use crate::convert::{json_to_monty, monty_to_json};
+use crate::os_access::{OsAccess, OsAccessBuilder, PathAccess};
 use crate::prompt::{MONTY_PROMPT, TOOL_DISPATCH_FN, tool_entry};
 
 /// The resource tracker every run is created with. `LimitedTracker` serializes
@@ -69,8 +71,9 @@ type Progress = RunProgress<Tracker>;
 /// backed by the Monty interpreter.
 ///
 /// Build one with [`MontyRuntime::new`] for sensible defaults, or
-/// [`MontyRuntime::builder`] to set resource limits or extend the language
-/// briefing. Hand the result to
+/// [`MontyRuntime::builder`] to set resource limits, grant OS access (mounted
+/// paths, an environment map, the host clock), or extend the language briefing.
+/// Hand the result to
 /// [`CodeAgentBuilder::runtime`](adk_agent::codeact::CodeAgentBuilder::runtime).
 ///
 /// # Example
@@ -85,6 +88,10 @@ type Progress = RunProgress<Tracker>;
 pub struct MontyRuntime {
     limits: ResourceLimits,
     extra_prompt: Option<String>,
+    /// Host-controlled OS-access policy (mounted paths, environment, clock).
+    /// Shared into every paused tool call so a resumed run keeps the same
+    /// policy. See [`OsAccess`].
+    os: Arc<OsAccess>,
 }
 
 /// Conservative per-advance resource limits applied by default.
@@ -138,14 +145,16 @@ impl Default for MontyRuntime {
 pub struct MontyRuntimeBuilder {
     limits: ResourceLimits,
     extra_prompt: Option<String>,
+    os: OsAccessBuilder,
 }
 
 impl MontyRuntimeBuilder {
     /// Create a builder seeded with the conservative default limits (see
-    /// [`default_resource_limits`]).
+    /// [`default_resource_limits`]) and a fully sandboxed OS policy (no
+    /// filesystem access, empty environment, host clock enabled).
     #[must_use]
     pub fn new() -> Self {
-        Self { limits: default_resource_limits(), extra_prompt: None }
+        Self { limits: default_resource_limits(), extra_prompt: None, os: OsAccessBuilder::new() }
     }
 
     /// Replace the full set of resource limits.
@@ -208,10 +217,82 @@ impl MontyRuntimeBuilder {
         self
     }
 
+    /// Replace the whole OS-access policy.
+    ///
+    /// Use this when you have built an [`OsAccess`] separately; otherwise reach
+    /// for the per-aspect shortcuts [`Self::allow_path`], [`Self::environ`],
+    /// [`Self::environ_var`], and [`Self::system_clock`].
+    #[must_use]
+    pub fn os_access(mut self, access: OsAccess) -> Self {
+        self.os = access.into_builder();
+        self
+    }
+
+    /// Make a host directory available to scripts at `virtual_path`, read-only
+    /// or read-write.
+    ///
+    /// Scripts reach it through `pathlib.Path` against `virtual_path` (e.g.
+    /// `/data`); Monty enforces the mount boundary so a script can never escape
+    /// it. By default no paths are accessible. See
+    /// [`OsAccessBuilder::allow_path`].
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use adk_codeact_monty::{MontyRuntime, PathAccess};
+    ///
+    /// let runtime = MontyRuntime::builder()
+    ///     .allow_path("/data", "/srv/agent/data", PathAccess::ReadOnly)
+    ///     .build();
+    /// # let _ = runtime;
+    /// ```
+    #[must_use]
+    pub fn allow_path(
+        mut self,
+        virtual_path: impl Into<String>,
+        host_path: impl Into<std::path::PathBuf>,
+        access: PathAccess,
+    ) -> Self {
+        self.os = self.os.allow_path(virtual_path, host_path, access);
+        self
+    }
+
+    /// Replace the environment map exposed to scripts via `os.getenv` /
+    /// `os.environ`. Empty by default — the host process environment is never
+    /// exposed implicitly.
+    #[must_use]
+    pub fn environ<K, V>(mut self, vars: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.os = self.os.environ(vars);
+        self
+    }
+
+    /// Add or overwrite a single environment variable visible to scripts.
+    #[must_use]
+    pub fn environ_var(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.os = self.os.environ_var(key, value);
+        self
+    }
+
+    /// Enable or disable host-clock access (`date.today()` / `datetime.now()`).
+    /// Enabled by default.
+    #[must_use]
+    pub fn system_clock(mut self, enabled: bool) -> Self {
+        self.os = self.os.system_clock(enabled);
+        self
+    }
+
     /// Finish building the runtime.
     #[must_use]
     pub fn build(self) -> MontyRuntime {
-        MontyRuntime { limits: self.limits, extra_prompt: self.extra_prompt }
+        MontyRuntime {
+            limits: self.limits,
+            extra_prompt: self.extra_prompt,
+            os: Arc::new(self.os.build()),
+        }
     }
 }
 
@@ -231,7 +312,7 @@ impl CodeRuntime for MontyRuntime {
         };
         let mut stdout = String::new();
         match run.start(Vec::new(), self.tracker(), PrintWriter::CollectString(&mut stdout)) {
-            Ok(progress) => drive(progress, stdout),
+            Ok(progress) => drive(progress, stdout, &self.os),
             // An exception raised during the first stretch of execution is a
             // script error: surface it as a Raised traceback, not a host error.
             Err(exc) => Ok(RunStep::raised(render_exception(&exc)).with_stdout(stdout)),
@@ -244,11 +325,13 @@ impl CodeRuntime for MontyRuntime {
         let call = progress.into_function_call().ok_or_else(|| {
             RuntimeError::Snapshot("snapshot is not a paused external function call".to_string())
         })?;
-        resume_call(call, with)
+        resume_call(call, with, &self.os)
     }
 
     fn capabilities(&self) -> RuntimeCapabilities {
         let mut prompt = MONTY_PROMPT.to_string();
+        prompt.push_str("\n\n");
+        prompt.push_str(&self.os.prompt_section());
         if let Some(extra) = &self.extra_prompt {
             prompt.push_str("\n\n");
             prompt.push_str(extra);
@@ -288,7 +371,18 @@ impl CodeRuntime for MontyRuntime {
 /// and blocked futures are resolved in-place (see the module docs) so the loop
 /// continues until a tool call or completion is reached. A Python exception that
 /// propagates out becomes [`RunStep::Raised`].
-fn drive(mut progress: Progress, mut stdout: String) -> Result<RunStep, RuntimeError> {
+///
+/// OS calls (filesystem, environment, clock) are serviced in-place against the
+/// [`OsAccess`] policy and resumed immediately — they are never tools and never
+/// pause the agent loop. A fresh [`MountTable`](monty::fs::MountTable) is built
+/// once per drive so concurrent runs of the same runtime never share mount
+/// state.
+fn drive(
+    mut progress: Progress,
+    mut stdout: String,
+    os: &Arc<OsAccess>,
+) -> Result<RunStep, RuntimeError> {
+    let mut mounts = os.build_mount_table()?;
     loop {
         match progress {
             RunProgress::Complete(value) => {
@@ -296,7 +390,7 @@ fn drive(mut progress: Progress, mut stdout: String) -> Result<RunStep, RuntimeE
             }
             RunProgress::FunctionCall(call) => match resolve_dispatch(&call) {
                 Ok((name, keyword)) => {
-                    let pending = MontyPendingCall::from_call(call, name, keyword);
+                    let pending = MontyPendingCall::from_call(call, name, keyword, os.clone());
                     return Ok(RunStep::call(Box::new(pending)).with_stdout(stdout));
                 }
                 // Not a well-formed `call_tool(...)` dispatch: raise a corrective
@@ -315,10 +409,10 @@ fn drive(mut progress: Progress, mut stdout: String) -> Result<RunStep, RuntimeE
                 }
             },
             RunProgress::OsCall(call) => {
-                let denied = monty_error(
-                    "operating-system, filesystem, and network access are disabled in this sandbox",
-                );
-                progress = match call.resume(denied, PrintWriter::CollectString(&mut stdout)) {
+                // Resolve filesystem/env/clock access in-place against the
+                // host policy and resume immediately — never surfaced as a tool.
+                let result = os.resolve(&call.function_call, &mut mounts);
+                progress = match call.resume(result, PrintWriter::CollectString(&mut stdout)) {
                     Ok(next) => next,
                     Err(exc) => {
                         return Ok(RunStep::raised(render_exception(&exc)).with_stdout(stdout));
@@ -369,6 +463,10 @@ struct MontyPendingCall {
     call_id: u64,
     /// Always the [`RunProgress::FunctionCall`] variant for this call.
     progress: Progress,
+    /// OS-access policy to apply when the resumed run hits an OS call. Carried
+    /// here so an in-process resume keeps the same policy without a runtime
+    /// reference.
+    os: Arc<OsAccess>,
 }
 
 impl MontyPendingCall {
@@ -380,9 +478,14 @@ impl MontyPendingCall {
     /// positional slice is always empty and the driver binds the keyword entries
     /// onto the tool's parameters by name — exactly, with no positional
     /// inference.
-    fn from_call(call: FunctionCall<Tracker>, name: String, keyword: Vec<(String, Value)>) -> Self {
+    fn from_call(
+        call: FunctionCall<Tracker>,
+        name: String,
+        keyword: Vec<(String, Value)>,
+        os: Arc<OsAccess>,
+    ) -> Self {
         let call_id = u64::from(call.call_id);
-        Self { name, keyword, call_id, progress: RunProgress::FunctionCall(call) }
+        Self { name, keyword, call_id, progress: RunProgress::FunctionCall(call), os }
     }
 }
 
@@ -478,17 +581,22 @@ impl PendingCall for MontyPendingCall {
     }
 
     fn resume(self: Box<Self>, with: ResumeWith) -> Result<RunStep, RuntimeError> {
+        let os = self.os.clone();
         let call = self
             .progress
             .into_function_call()
             .expect("MontyPendingCall always wraps a function call");
-        resume_call(call, with)
+        resume_call(call, with, &os)
     }
 }
 
 /// Feed a tool result (or a raised error) back into a paused [`FunctionCall`]
 /// and drive the interpreter onward, capturing any `print` output.
-fn resume_call(call: FunctionCall<Tracker>, with: ResumeWith) -> Result<RunStep, RuntimeError> {
+fn resume_call(
+    call: FunctionCall<Tracker>,
+    with: ResumeWith,
+    os: &Arc<OsAccess>,
+) -> Result<RunStep, RuntimeError> {
     let result = match with {
         ResumeWith::Value(value) => ExtFunctionResult::Return(json_to_monty(value)),
         // Raise the framework's error message into the script as an exception the
@@ -497,7 +605,7 @@ fn resume_call(call: FunctionCall<Tracker>, with: ResumeWith) -> Result<RunStep,
     };
     let mut stdout = String::new();
     match call.resume(result, PrintWriter::CollectString(&mut stdout)) {
-        Ok(progress) => drive(progress, stdout),
+        Ok(progress) => drive(progress, stdout, os),
         Err(exc) => Ok(RunStep::raised(render_exception(&exc)).with_stdout(stdout)),
     }
 }

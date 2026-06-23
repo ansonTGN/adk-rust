@@ -12,11 +12,13 @@ use serde_json::{Map, Value};
 /// The Monty language briefing injected verbatim into the system prompt.
 ///
 /// It covers only what is *specific to Monty* and cannot be inferred: the Python
-/// *subset* Monty accepts, the sandbox restrictions, the language mechanism for
-/// reporting a result (the script's last expression), and the single tool-calling
-/// convention. The set of result tags and their meanings is owned by the
-/// framework's `CODEACT_SYSTEM_PROMPT`, which is injected ahead of this text — so
-/// this briefing deliberately does not repeat them.
+/// *subset* Monty accepts, the language mechanism for reporting a result (the
+/// script's last expression), and the single tool-calling convention. The OS
+/// access a script is granted is appended separately by
+/// [`OsAccess::prompt_section`](crate::OsAccess), and the set of result tags and
+/// their meanings is owned by the framework's `CODEACT_SYSTEM_PROMPT`, which is
+/// injected ahead of this text — so this briefing deliberately does not repeat
+/// them.
 pub(crate) const MONTY_PROMPT: &str = "\
 You write Python that runs on Monty — a fast, sandboxed, Rust-native Python
 interpreter. Emit exactly ONE fenced code block per turn (```python ... ```).
@@ -24,8 +26,9 @@ interpreter. Emit exactly ONE fenced code block per turn (```python ... ```).
 Monty runs a SUBSET of Python:
 - No `class` definitions and no `match` statements.
 - No third-party libraries and no imports beyond a small standard library
-  (`sys` , `os`, `typing`, `asyncio`, `re`, `datetime`, `json`).
-- No filesystem, network, environment, or OS access — those are blocked.
+  (`sys` , `os`, `typing`, `asyncio`, `re`, `datetime`, `json`, `pathlib`).
+- Filesystem, environment, and clock access are restricted by the host policy
+  described in the OS access section below.
 - Functions, loops, comprehensions, conditionals, f-strings, and the common
   builtins (`len`, `sum`, `min`, `max`, `sorted`, `range`, `enumerate`,
   `int`, `float`, `str`, `dict`, `list`, ...) all work.
